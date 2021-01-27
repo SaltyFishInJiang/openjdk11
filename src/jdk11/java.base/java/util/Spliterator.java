@@ -305,6 +305,7 @@ public interface Spliterator<T> {
      * @return {@code false} if no remaining elements existed
      * upon entry to this method, else {@code true}.
      * @throws NullPointerException if the specified action is null
+     * 如果存在元素，则对其执行 action；
      */
     boolean tryAdvance(Consumer<? super T> action);
 
@@ -321,6 +322,7 @@ public interface Spliterator<T> {
      *
      * @param action The action
      * @throws NullPointerException if the specified action is null
+     * 对余下的元素，都执行action；直到遍历完，或遇到异常。
      */
     default void forEachRemaining(Consumer<? super T> action) {
         do { } while (tryAdvance(action));
@@ -330,13 +332,16 @@ public interface Spliterator<T> {
      * If this spliterator can be partitioned, returns a Spliterator
      * covering elements, that will, upon return from this method, not
      * be covered by this Spliterator.
+     * 拆分当前 Spliterator。得到的 Spliterator 遍历的元素，将不再被当前 Spliterator 所包含。
      *
      * <p>If this Spliterator is {@link #ORDERED}, the returned Spliterator
      * must cover a strict prefix of the elements.
+     * 如果当前是 ORDER 的，那么得到的 Spliterator 将会遍历一组相同特征（前缀）的元素。
      *
      * <p>Unless this Spliterator covers an infinite number of elements,
      * repeated calls to {@code trySplit()} must eventually return {@code null}.
      * Upon non-null return:
+     * 除非当前是无限元素，否则最终将得到 NULL。
      * <ul>
      * <li>the value reported for {@code estimateSize()} before splitting,
      * must, after splitting, be greater than or equal to {@code estimateSize()}
@@ -346,12 +351,14 @@ public interface Spliterator<T> {
      * {@code estimateSize()} for this and the returned Spliterator after
      * splitting.</li>
      * </ul>
+     * 拆分前 estimateSize() 必定大于等于拆分后的。
+     * 如果是 SUBSIZED，那么拆分前的等于拆分后的总和。
      *
      * <p>This method may return {@code null} for any reason,
      * including emptiness, inability to split after traversal has
      * commenced, data structure constraints, and efficiency
      * considerations.
-     *
+     * 此方法可能由于任何原因返回null，包括空闲，在遍历开始后无法拆分，数据结构约束和效率考虑。
      * @apiNote
      * An ideal {@code trySplit} method efficiently (without
      * traversal) divides its elements exactly in half, allowing
@@ -363,7 +370,9 @@ public interface Spliterator<T> {
      * deviations in balance and/or overly inefficient {@code
      * trySplit} mechanics typically result in poor parallel
      * performance.
-     *
+     *  注意： 理想的trySplit方法有效地（无遍历）将其元素精确地分成两半，允许平衡并行计算。
+     * 许多偏离这种理想仍然非常有效；例如，仅近似地拆分一个近似平衡的树，或者叶子节点可能包含一个或两个元素的树，无法进一步拆分这些节点。
+     * 然而，平衡的大偏差和/或过低效率的trySplit机制通常会导致较差的并行性能。
      * @return a {@code Spliterator} covering some portion of the
      * elements, or {@code null} if this spliterator cannot be split
      */
@@ -373,14 +382,16 @@ public interface Spliterator<T> {
      * Returns an estimate of the number of elements that would be
      * encountered by a {@link #forEachRemaining} traversal, or returns {@link
      * Long#MAX_VALUE} if infinite, unknown, or too expensive to compute.
-     *
+     * 得到一个用于表示 forEachRemaining 还可以遍历多少的预估值。特别特别注意，不是全部，而是剩余可遍历。
+     * 或者如果是无限，未知，或太大难以计算，则返回 Long.MAX_VALUE
      * <p>If this Spliterator is {@link #SIZED} and has not yet been partially
      * traversed or split, or this Spliterator is {@link #SUBSIZED} and has
      * not yet been partially traversed, this estimate must be an accurate
      * count of elements that would be encountered by a complete traversal.
      * Otherwise, this estimate may be arbitrarily inaccurate, but must decrease
      * as specified across invocations of {@link #trySplit}.
-     *
+     * 如果是 SIZED，且未拆分或未部分遍历；或SUBSIZED且未部分遍历，则返回值应该是接下来遍历的
+     * 否则，此估算值可能是任意不正确的，但必须按照{@link #trySplit}调用中指定的那样减小。
      * @apiNote
      * Even an inexact estimate is often useful and inexpensive to compute.
      * For example, a sub-spliterator of an approximately balanced binary tree
@@ -426,7 +437,9 @@ public interface Spliterator<T> {
      * may differ from the characteristics after splitting.  For specific
      * examples see the characteristic values {@link #SIZED}, {@link #SUBSIZED}
      * and {@link #CONCURRENT}.
-     *
+     * 定义的枚举数值的或运算结果。
+     * 应该是不变的，重复调用也有相同的结果。
+     * 拆分前后可能不同。
      * @return a representation of characteristics
      */
     int characteristics();
@@ -482,14 +495,14 @@ public interface Spliterator<T> {
      * such as {@link HashSet}. Clients of a Spliterator that reports
      * {@code ORDERED} are expected to preserve ordering constraints in
      * non-commutative parallel computations.
-     */
+     */// 标识数据源的元素是有序的
     public static final int ORDERED    = 0x00000010;
 
     /**
      * Characteristic value signifying that, for each pair of
      * encountered elements {@code x, y}, {@code !x.equals(y)}. This
      * applies for example, to a Spliterator based on a {@link Set}.
-     */
+     */// 标识数据源的元素是不重复的。比如基于 Set的
     public static final int DISTINCT   = 0x00000001;
 
     /**
@@ -503,6 +516,11 @@ public interface Spliterator<T> {
      *
      * @apiNote The spliterators for {@code Collection} classes in the JDK that
      * implement {@link NavigableSet} or {@link SortedSet} report {@code SORTED}.
+     * 数据源的元素是按照一定规律排序的。
+     * 基于该特征，要么getComparator() 有值，优先；
+     * 要么， 元素是实现 Comparable 接口。
+     * 同时具备 ORDERED 的特征。
+     * 比如基于 SortedSet。
      */
     public static final int SORTED     = 0x00000004;
 
@@ -517,6 +535,9 @@ public interface Spliterator<T> {
      * {@code Collection} report this characteristic. Sub-spliterators, such as
      * those for {@link HashSet}, that cover a sub-set of elements and
      * approximate their reported size do not.
+     * 大小固定。
+     * 在遍历或拆分之前，通过 estimateSize() 得到的是数据源未修改情况下的精确计数。
+     * 大部分 Collection 的 Spliterator 会具备该特性。
      */
     public static final int SIZED      = 0x00000040;
 
@@ -524,6 +545,7 @@ public interface Spliterator<T> {
      * Characteristic value signifying that the source guarantees that
      * encountered elements will not be {@code null}. (This applies,
      * for example, to most concurrent collections, queues, and maps.)
+     * 数据源不为空。大部分的并发集合、队列、map。
      */
     public static final int NONNULL    = 0x00000100;
 
@@ -535,6 +557,7 @@ public interface Spliterator<T> {
      * to have a documented policy (for example throwing
      * {@link ConcurrentModificationException}) concerning structural
      * interference detected during traversal.
+     * 不可变。标识遍历期间，不可添加、删除、替换。
      */
     public static final int IMMUTABLE  = 0x00000400;
 
@@ -563,6 +586,9 @@ public interface Spliterator<T> {
      * guaranteeing accuracy with respect to elements present at the point of
      * Spliterator construction, but possibly not reflecting subsequent
      * additions or removals.
+     *
+     * 并发安全。在多线程遍历的情况下，线程安全地添加、替换、删除。
+     * 一般不会同时存在该特征和 SIZED 或 IMMUTABLE。
      */
     public static final int CONCURRENT = 0x00001000;
 
@@ -580,6 +606,8 @@ public interface Spliterator<T> {
      * approximately balanced binary tree, will report {@code SIZED} but not
      * {@code SUBSIZED}, since it is common to know the size of the entire tree
      * but not the exact sizes of subtrees.
+     * 通过 trySplit() 拆分出的子迭代器，同时具有 SUBSIZED 和 SIZED。
+     * 简单来说，所有的子迭代器，无论是直接拆分的，还是间接的，都是 SIZED。
      */
     public static final int SUBSIZED = 0x00004000;
 

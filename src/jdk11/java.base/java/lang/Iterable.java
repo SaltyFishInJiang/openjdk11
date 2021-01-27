@@ -95,7 +95,7 @@ public interface Iterable<T> {
      *
      * @return a {@code Spliterator} over the elements described by this
      * {@code Iterable}.
-     * @since 1.8
+     * @since 1.8 // 多线程并行迭代器
      */
     default Spliterator<T> spliterator() {
         return Spliterators.spliteratorUnknownSize(iterator(), 0);
