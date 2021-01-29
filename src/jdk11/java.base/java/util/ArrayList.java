@@ -932,9 +932,9 @@ public class ArrayList<E> extends AbstractList<E>
             // Preserve behavioral compatibility with AbstractCollection,
             // even if c.contains() throws.
             // 异常中断, 剩余未判断(r 之后)的元素不再处理, 顺位到 w 后面.
-            // 数组:............w........r.....s
+            // 处理前:............w........r.....s
             System.arraycopy(es, r, es, w, end - r);
-            // 数组:............r.....s..r.....s
+            // 处理后:............r.....s..r.....s
             w += end - r;
             throw ex;
         } finally {
