@@ -118,6 +118,7 @@ public class Vector<E>
      * of the vector is doubled each time it needs to grow.
      *
      * @serial
+     * 增量扩容值.如果小于等于0, 则每次翻倍扩容
      */
     protected int capacityIncrement;
 
@@ -276,6 +277,7 @@ public class Vector<E>
     private int newCapacity(int minCapacity) {
         // overflow-conscious code
         int oldCapacity = elementData.length;
+        // 与 ArrayList 的扩容仅此不同
         int newCapacity = oldCapacity + ((capacityIncrement > 0) ?
                                          capacityIncrement : oldCapacity);
         if (newCapacity - minCapacity <= 0) {
