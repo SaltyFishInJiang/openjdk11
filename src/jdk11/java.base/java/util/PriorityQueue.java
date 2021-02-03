@@ -97,6 +97,9 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * natural ordering, if comparator is null: For each node n in the
      * heap and each descendant d of n, n <= d.  The element with the
      * lowest value is in queue[0], assuming the queue is nonempty.
+     * 表示为平衡二进制堆的优先级队列：queue [n]的两个子级是queue [2 * n + 1]和queue [2 *（n + 1）]。
+     * 如果比较器为null，则按比较器或元素的自然顺序对优先级队列进行排序：对于堆中的每个节点n和n的每个后代d，n <= d。
+     * 假定队列为非空，则具有最低值的元素位于queue [0]中
      */
     transient Object[] queue; // non-private to simplify nested class access
 
@@ -108,6 +111,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
     /**
      * The comparator, or null if priority queue uses elements'
      * natural ordering.
+     * 指定的比较器， 即使元素实现了 Comparable， 也优先使用该比较器
      */
     private final Comparator<? super E> comparator;
 
@@ -167,6 +171,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
                          Comparator<? super E> comparator) {
         // Note: This restriction of at least one is not actually needed,
         // but continues for 1.5 compatibility
+        // 指定初始容量至少为 1, 本身是为了兼容 1.5
         if (initialCapacity < 1)
             throw new IllegalArgumentException();
         this.queue = new Object[initialCapacity];
@@ -188,6 +193,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *         queue's ordering
      * @throws NullPointerException if the specified collection or any
      *         of its elements are null
+     * 如果是 SortedSet 或 PriorityQueue 的有序集合, 则按照按照原顺序迁移
+     * 否则按照元素的 Comparable 构建小顶堆
      */
     public PriorityQueue(Collection<? extends E> c) {
         if (c instanceof SortedSet<?>) {
@@ -202,6 +209,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         }
         else {
             this.comparator = null;
+            // 非有序集合
             initFromCollection(c);
         }
     }
@@ -243,7 +251,10 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         initElementsFromCollection(c);
     }
 
-    /** Ensures that queue[0] exists, helping peek() and poll(). */
+    /**
+     * Ensures that queue[0] exists, helping peek() and poll().
+     * 确保queue[0]存在，以帮助peek() 和poll()
+     * */
     private static Object[] ensureNonEmpty(Object[] es) {
         return (es.length > 0) ? es : new Object[1];
     }
@@ -266,7 +277,9 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         if (len == 1 || this.comparator != null)
             for (Object e : es)
                 if (e == null)
+                    // 相当于说已排序的, 则校验元素不为 null
                     throw new NullPointerException();
+                // 否则,后续构建小顶堆期间, 进行自身比较时会限制不为 null
         this.queue = ensureNonEmpty(es);
         this.size = len;
     }
@@ -297,6 +310,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
     private void grow(int minCapacity) {
         int oldCapacity = queue.length;
         // Double size if small; else grow by 50%
+        // 小于 64 时, 每次扩容翻倍再+ 2; 否则 50% 扩容
         int newCapacity = oldCapacity + ((oldCapacity < 64) ?
                                          (oldCapacity + 2) :
                                          (oldCapacity >> 1));
@@ -508,12 +522,19 @@ public class PriorityQueue<E> extends AbstractQueue<E>
          *
          * We expect that most iterations, even those involving removals,
          * will not need to store elements in this field.
+         * 由于迭代过程中“不幸的”元素删除而导致的元素队列从堆的未访问部分移至已访问部分。
+         * （不幸的元素删除是那些从下移到上面的, 即siftUp上去的）
+         * 我们必须访问此列表中的所有元素以完成迭代。
+         * 我们在完成“常规”迭代之后执行此操作(即把原来的迭代器跑完)。
+         * 我们希望大多数迭代，即使是涉及删除的迭代，也不需要在此字段中存储元素。
+         * 是一个顺序双向队列
          */
         private ArrayDeque<E> forgetMeNot;
 
         /**
          * Element returned by the most recent call to next iff that
          * element was drawn from the forgetMeNot list.
+         * 类同于 lastRet, 不过来自于新队列 forgetMeNot, 所以不是根据索引存储.
          */
         private E lastRetElt;
 
@@ -527,6 +548,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         Itr() {}                        // prevent access constructor creation
 
         public boolean hasNext() {
+            // 同时判断两个队列
             return cursor < size ||
                 (forgetMeNot != null && !forgetMeNot.isEmpty());
         }
@@ -538,6 +560,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
                 return (E) queue[lastRet = cursor++];
             if (forgetMeNot != null) {
                 lastRet = -1;
+                // 从新队列中取
                 lastRetElt = forgetMeNot.poll();
                 if (lastRetElt != null)
                     return lastRetElt;
@@ -550,15 +573,20 @@ public class PriorityQueue<E> extends AbstractQueue<E>
                 throw new ConcurrentModificationException();
             if (lastRet != -1) {
                 E moved = PriorityQueue.this.removeAt(lastRet);
+                // 由于最近遍历被移除了, 所以置为 -1
                 lastRet = -1;
                 if (moved == null)
+                    // 移除后的补位机制, 所以可以重新访问当前位置
                     cursor--;
                 else {
+                    // moved 不为空, 说明发生了向上调整
                     if (forgetMeNot == null)
+                        // 是一个顺序双向队列
                         forgetMeNot = new ArrayDeque<>();
                     forgetMeNot.add(moved);
                 }
             } else if (lastRetElt != null) {
+                // 从新队列中移除
                 PriorityQueue.this.removeEq(lastRetElt);
                 lastRetElt = null;
             } else {
@@ -595,6 +623,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             es[n] = null;
             if (n > 0) {
                 final Comparator<? super E> cmp;
+                // 最后一位放到堆顶, 所以不同于移除指定位(先向下或向上),这里只需要向下判断调整即可
                 if ((cmp = comparator) == null)
                     siftDownComparable(0, x, es, n);
                 else
@@ -625,11 +654,17 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             es[i] = null;
         else {
             E moved = (E) es[s];
+            // i 移除后, 将最后一位填充到 i,再调整堆
+            // 粗糙来看, 相当于数组全部前移一位, 所以 size - 1 的位置置为 null
             es[s] = null;
+            // 因为是从最后一位调上来, 所以优先向下沉(认为它是小于当前位置的子级)
             siftDown(i, moved);
             if (es[i] == moved) {
+                // 没有发生调整, 再往上调整(可能这块子树的值都比较小)
                 siftUp(i, moved);
                 if (es[i] != moved)
+                    // 因为调整, 所以在迭代器顺序遍历的情况下, 可能导致moved无法被遍历到了。
+                    // 所以返回给调用方处理(放在新的顺序队列(ArrayQueue)中, 原队列遍历完, 继续遍历新队列)
                     return moved;
             }
         }
@@ -647,6 +682,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *
      * @param k the position to fill
      * @param x the item to insert
+     * 将某个元素提升到父级，甚至到根
      */
     private void siftUp(int k, E x) {
         if (comparator != null)
@@ -658,11 +694,14 @@ public class PriorityQueue<E> extends AbstractQueue<E>
     private static <T> void siftUpComparable(int k, T x, Object[] es) {
         Comparable<? super T> key = (Comparable<? super T>) x;
         while (k > 0) {
+            // parent 就是指定插入位置的父级
             int parent = (k - 1) >>> 1;
             Object e = es[parent];
             if (key.compareTo((T) e) >= 0)
                 break;
+            // 父级换下来
             es[k] = e;
+            // 继续往上比较
             k = parent;
         }
         es[k] = key;
@@ -688,6 +727,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *
      * @param k the position to fill
      * @param x the item to insert
+     * 某个元素下沉到子级，甚至是叶子节点
      */
     private void siftDown(int k, E x) {
         if (comparator != null)
@@ -701,15 +741,19 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         Comparable<? super T> key = (Comparable<? super T>)x;
         int half = n >>> 1;           // loop while a non-leaf
         while (k < half) {
+            // 优先取"左子"
             int child = (k << 1) + 1; // assume left child is least
             Object c = es[child];
             int right = child + 1;
             if (right < n &&
                 ((Comparable<? super T>) c).compareTo((T) es[right]) > 0)
+                // 左右双子中, 取小的那个
                 c = es[child = right];
             if (key.compareTo((T) c) <= 0)
                 break;
+            // 子比父小
             es[k] = c;
+            // 一直往树底推, 直到叶子
             k = child;
         }
         es[k] = key;
@@ -737,11 +781,14 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * Establishes the heap invariant (described above) in the entire tree,
      * assuming nothing about the order of the elements prior to the call.
      * This classic algorithm due to Floyd (1964) is known to be O(size).
+     * 构建小顶堆
+     * 不同于堆排序, 这里只需要构建堆即可。不需要得到整体有序的集合
      */
     private void heapify() {
         final Object[] es = queue;
         int n = size, i = (n >>> 1) - 1;
         final Comparator<? super E> cmp;
+        // 大值往下筛
         if ((cmp = comparator) == null)
             for (; i >= 0; i--)
                 siftDownComparable(i, (E) es[i], es, n);
@@ -954,6 +1001,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         // Tolerate predicates that reentrantly access the collection for
         // read (but writers still get CME), so traverse once to find
         // elements to delete, a second pass to physically expunge.
+        // 借助位图, 批量查找符合条件的元素, 批量删除.
+        // 避免多次调整
         final int beg = i;
         final long[] deathRow = nBits(end - beg);
         deathRow[0] = 1L;   // set bit 0
@@ -968,6 +1017,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
                 es[w++] = es[i];
         for (i = size = w; i < end; i++)
             es[i] = null;
+        // 重新构建堆
         heapify();
         return true;
     }

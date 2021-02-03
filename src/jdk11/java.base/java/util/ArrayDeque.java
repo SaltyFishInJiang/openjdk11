@@ -115,6 +115,8 @@ public class ArrayDeque<E> extends AbstractCollection<E>
      * element that would be removed by remove() or pop()); or an
      * arbitrary number 0 <= head < elements.length equal to tail if
      * the deque is empty.
+     * 空 :0 <= head = tail < elements.length
+     * 满 : elements.length - head = tail
      */
     transient int head;
 
@@ -122,6 +124,7 @@ public class ArrayDeque<E> extends AbstractCollection<E>
      * The index at which the next element would be added to the tail
      * of the deque (via addLast(E), add(E), or push(E));
      * elements[tail] is always null.
+     * elements[tail] 在任意操作后,对外展示时, 一定是 null
      */
     transient int tail;
 
@@ -149,14 +152,18 @@ public class ArrayDeque<E> extends AbstractCollection<E>
             newCapacity = newCapacity(needed, jump);
         final Object[] es = elements = Arrays.copyOf(elements, newCapacity);
         // Exceptionally, here tail == head needs to be disambiguated
-        if (tail < head || (tail == head && es[head] != null)) {
+        if (tail < head
+                // 因为是添加后扩容, 所以需要判断 tail == head 的歧义(可能是满,违反了 tail 一定是 null 的规则)
+                || (tail == head && es[head] != null)) {
             // wrap around; slide first leg forward to end of array
+            // ++++++tail-------head++++++|------ 或 ++++++++++++head&tail++++++|------
             int newSpace = newCapacity - oldCapacity;
             System.arraycopy(es, head,
                              es, head + newSpace,
                              oldCapacity - head);
             for (int i = head, to = (head += newSpace); i < to; i++)
                 es[i] = null;
+            // 处理后:++++++tail-------------head++++++ 或 ++++++++++++tail------head++++++
         }
     }
 
@@ -190,6 +197,7 @@ public class ArrayDeque<E> extends AbstractCollection<E>
      * @param numElements lower bound on initial capacity of the deque
      */
     public ArrayDeque(int numElements) {
+        // 尽量会保留一个空槽
         elements =
             new Object[(numElements < 1) ? 1 :
                        (numElements == Integer.MAX_VALUE) ? Integer.MAX_VALUE :
@@ -214,6 +222,7 @@ public class ArrayDeque<E> extends AbstractCollection<E>
     /**
      * Circularly increments i, mod modulus.
      * Precondition and postcondition: 0 <= i < modulus.
+     * 循环增加 1
      */
     static final int inc(int i, int modulus) {
         if (++i >= modulus) i = 0;
@@ -288,6 +297,7 @@ public class ArrayDeque<E> extends AbstractCollection<E>
         final Object[] es = elements;
         es[head = dec(head, es.length)] = e;
         if (head == tail)
+            // 添加后扩容
             grow(1);
     }
 
@@ -305,6 +315,7 @@ public class ArrayDeque<E> extends AbstractCollection<E>
         final Object[] es = elements;
         es[tail] = e;
         if (head == (tail = inc(tail, es.length)))
+            // 添加后扩容
             grow(1);
     }
 
