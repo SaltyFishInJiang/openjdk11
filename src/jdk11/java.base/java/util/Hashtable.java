@@ -408,6 +408,7 @@ public class Hashtable<K,V>
         Entry<?,?>[] oldMap = table;
 
         // overflow-conscious code
+        // 扩容是 2 * old + 1
         int newCapacity = (oldCapacity << 1) + 1;
         if (newCapacity - MAX_ARRAY_SIZE > 0) {
             if (oldCapacity == MAX_ARRAY_SIZE)
@@ -428,6 +429,7 @@ public class Hashtable<K,V>
 
                 int index = (e.hash & 0x7FFFFFFF) % newCapacity;
                 e.next = (Entry<K,V>)newMap[index];
+                // 头插法
                 newMap[index] = e;
             }
         }
@@ -437,6 +439,7 @@ public class Hashtable<K,V>
         Entry<?,?> tab[] = table;
         if (count >= threshold) {
             // Rehash the table if the threshold is exceeded
+            // 先扩容, 后 put
             rehash();
 
             tab = table;
@@ -447,6 +450,7 @@ public class Hashtable<K,V>
         // Creates the new entry.
         @SuppressWarnings("unchecked")
         Entry<K,V> e = (Entry<K,V>) tab[index];
+        // 头插法, 新节点放在数组上
         tab[index] = new Entry<>(hash, key, value, e);
         count++;
         modCount++;
@@ -477,18 +481,22 @@ public class Hashtable<K,V>
 
         // Makes sure the key is not already in the hashtable.
         Entry<?,?> tab[] = table;
+        // 直接获取 key 的 hashcode, 而不是再通过扰动函数
         int hash = key.hashCode();
+        // (hash & 0x7FFFFFFF) 确保正数
+        // 由于tab.length 一般都是素数或奇数, 直接取余即可
         int index = (hash & 0x7FFFFFFF) % tab.length;
         @SuppressWarnings("unchecked")
         Entry<K,V> entry = (Entry<K,V>)tab[index];
         for(; entry != null ; entry = entry.next) {
+            // 链表遍历
             if ((entry.hash == hash) && entry.key.equals(key)) {
                 V old = entry.value;
                 entry.value = value;
                 return old;
             }
         }
-
+        // 新增结点
         addEntry(hash, key, value, index);
         return null;
     }

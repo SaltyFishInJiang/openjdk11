@@ -190,6 +190,7 @@ public class LinkedHashMap<K,V>
      * HashMap.Node subclass for normal LinkedHashMap entries.
      */
     static class Entry<K,V> extends HashMap.Node<K,V> {
+        // 注意：HashMap.TreeNode 是继承自该类，所以当 LinkedHashMap 树化时也是支持顺序的。
         Entry<K,V> before, after;
         Entry(int hash, K key, V value, Node<K,V> next) {
             super(hash, key, value, next);
@@ -255,6 +256,7 @@ public class LinkedHashMap<K,V>
     Node<K,V> newNode(int hash, K key, V value, Node<K,V> e) {
         LinkedHashMap.Entry<K,V> p =
             new LinkedHashMap.Entry<>(hash, key, value, e);
+        // 将新结点放在最后, 默认的插入顺序
         linkNodeLast(p);
         return p;
     }
@@ -263,12 +265,14 @@ public class LinkedHashMap<K,V>
         LinkedHashMap.Entry<K,V> q = (LinkedHashMap.Entry<K,V>)p;
         LinkedHashMap.Entry<K,V> t =
             new LinkedHashMap.Entry<>(q.hash, q.key, q.value, next);
+        // 替换结点, 将顺序属性也已迁移掉
         transferLinks(q, t);
         return t;
     }
 
     TreeNode<K,V> newTreeNode(int hash, K key, V value, Node<K,V> next) {
         TreeNode<K,V> p = new TreeNode<>(hash, key, value, next);
+        // 将新结点放在最后, 默认的插入顺序
         linkNodeLast(p);
         return p;
     }
@@ -276,6 +280,7 @@ public class LinkedHashMap<K,V>
     TreeNode<K,V> replacementTreeNode(Node<K,V> p, Node<K,V> next) {
         LinkedHashMap.Entry<K,V> q = (LinkedHashMap.Entry<K,V>)p;
         TreeNode<K,V> t = new TreeNode<>(q.hash, q.key, q.value, next);
+        // 替换结点, 将顺序属性也已迁移掉
         transferLinks(q, t);
         return t;
     }
@@ -296,14 +301,17 @@ public class LinkedHashMap<K,V>
 
     void afterNodeInsertion(boolean evict) { // possibly remove eldest
         LinkedHashMap.Entry<K,V> first;
+        // evict:是否删除最旧的结点
         if (evict && (first = head) != null && removeEldestEntry(first)) {
             K key = first.key;
+            // 删除结点, HashMap 的方法
             removeNode(hash(key), key, null, false, true);
         }
     }
 
     void afterNodeAccess(Node<K,V> e) { // move node to last
         LinkedHashMap.Entry<K,V> last;
+        // 如果是基于访问顺序的话, 就把最新访问的结点放到最后
         if (accessOrder && (last = tail) != e) {
             LinkedHashMap.Entry<K,V> p =
                 (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;
@@ -344,7 +352,9 @@ public class LinkedHashMap<K,V>
      *         or the load factor is nonpositive
      */
     public LinkedHashMap(int initialCapacity, float loadFactor) {
+        // 容量和负载因子,完全沿袭 HashMap
         super(initialCapacity, loadFactor);
+        // 默认是插入顺序
         accessOrder = false;
     }
 
@@ -399,6 +409,7 @@ public class LinkedHashMap<K,V>
                          float loadFactor,
                          boolean accessOrder) {
         super(initialCapacity, loadFactor);
+        // 指定是访问顺序或插入顺序
         this.accessOrder = accessOrder;
     }
 
