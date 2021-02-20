@@ -64,6 +64,7 @@ public class InheritableThreadLocal<T> extends ThreadLocal<T> {
      * @return the child thread's initial value
      */
     protected T childValue(T parentValue) {
+        // 从父类值计算子类值, 可以重写
         return parentValue;
     }
 
@@ -73,6 +74,7 @@ public class InheritableThreadLocal<T> extends ThreadLocal<T> {
      * @param t the current thread
      */
     ThreadLocalMap getMap(Thread t) {
+        // 获取的 map 不同
        return t.inheritableThreadLocals;
     }
 
@@ -83,6 +85,7 @@ public class InheritableThreadLocal<T> extends ThreadLocal<T> {
      * @param firstValue value for the initial entry of the table.
      */
     void createMap(Thread t, T firstValue) {
+        // 使用的 map 不同
         t.inheritableThreadLocals = new ThreadLocalMap(this, firstValue);
     }
 }
