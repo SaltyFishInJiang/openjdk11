@@ -100,18 +100,22 @@ public final class Unsafe {
      * More specifically, fetches a field or array element within the given
      * object {@code o} at the given offset, or (if {@code o} is null)
      * from the memory address whose numerical value is the given offset.
+     * 从给定的Java变量中获取一个值。 更具体地说，从给定对象o中以给定偏移量或（如果o为空）从数值为给定偏移量的内存地址中获取字段或数组元素。
      * <p>
      * The results are undefined unless one of the following cases is true:
+     * 除非满足以下情况之一，否则结果是不确定的：
      * <ul>
      * <li>The offset was obtained from {@link #objectFieldOffset} on
      * the {@link java.lang.reflect.Field} of some Java field and the object
      * referred to by {@code o} is of a class compatible with that
      * field's class.
+     * o 不为 null，偏移量是 o 的类上对应字段的反射类 Filed 调用 `Unsafe.objectFieldOffset()` 获取到的。其次 o 所代表的的类肯定是向父类兼容的。
      *
      * <li>The offset and object reference {@code o} (either null or
      * non-null) were both obtained via {@link #staticFieldOffset}
      * and {@link #staticFieldBase} (respectively) from the
      * reflective {@link Field} representation of some Java field.
+     * 静态变量字段，无论 o 是否为 null，分别通过 `Unsafe.staticFieldOffset()`和 `Unsafe.staticFieldBase()`获取的。
      *
      * <li>The object referred to by {@code o} is an array, and the offset
      * is an integer of the form {@code B+N*S}, where {@code N} is
@@ -119,8 +123,11 @@ public final class Unsafe {
      * the values obtained by {@link #arrayBaseOffset} and {@link
      * #arrayIndexScale} (respectively) from the array's class.  The value
      * referred to is the {@code N}<em>th</em> element of the array.
-     *
+     *o 是一个数组，offset 是 ` B+N*S`的整数。N 是数组的有效索引，就是要第 N 给元素的值；
+     * B 是数组对象内存地址，通过`arrayBaseOffset()`获取；
+     * S 是数组一个元素的偏移量，指一个元素在内存中占据多少空间，通过`arrayIndexScale`获得。
      * </ul>
+     * // o == null 或者 调用 {@link #getInt(long)}
      * <p>
      * If one of the above cases is true, the call references a specific Java
      * variable (field or array element).  However, the results are undefined
@@ -189,6 +196,8 @@ public final class Unsafe {
      * If the reference {@code o} is non-null, card marks or
      * other store barriers for that object (if the VM requires them)
      * are updated.
+     * - x 为 null 或类型匹配，结果才是明确的；否则就有可能发生其他错误。
+     * - 如果 o 不为 null，则更新 card marks 或其他内存屏障（基于 JVM 的管理）。
      * @see #putInt(Object, long, int)
      */
     @HotSpotIntrinsicCandidate
@@ -261,11 +270,15 @@ public final class Unsafe {
      * the long representing the pointer.  The number of bytes actually read
      * from the target address may be determined by consulting {@link
      * #addressSize}.
+     * - 如果地址为零，或不是指向从 `allocateMemory()`获取的内存，则结果不确定。
+     * - 如果本机指针的宽度小于 64 位，则将其作为无符号数字扩展为 long。
+     * - 可以通过任何给定的字节偏移量来索引指针，只需将偏移量（作为简单整数）添加到表示指针的 long 中即可。
+     * - 从目标地址实际读取的字节数可以通过调用 `addressSize()`来确定。
      *
      * @see #allocateMemory
      * @see #getInt(Object, long)
      */
-    @ForceInline
+    @ForceInline// 被要求强制内联
     public long getAddress(Object o, long offset) {
         if (ADDRESS_SIZE == 4) {
             return Integer.toUnsignedLong(getInt(o, offset));
@@ -586,6 +599,9 @@ public final class Unsafe {
      * garbage.  The resulting native pointer will never be zero, and will be
      * aligned for all value types.  Dispose of this memory by calling {@link
      * #freeMemory}, or resize it with {@link #reallocateMemory}.
+     * 分配内存(以字节为单位),内存上的内容还未初始化,属于会被回收的垃圾.
+     * 返回的正常分配内存起始地址永远不会为0, 且将针对所有值类型进行对齐.
+     * 通过调用freeMemory处理此内存，或使用reallocateMemory调整其大小。
      *
      * <em>Note:</em> It is the resposibility of the caller to make
      * sure arguments are checked before the methods are called. While
@@ -640,7 +656,10 @@ public final class Unsafe {
      * of this memory by calling {@link #freeMemory}, or resize it with {@link
      * #reallocateMemory}.  The address passed to this method may be null, in
      * which case an allocation will be performed.
-     *
+     * 将新的本机内存块调整为给定的字节大小。 超出旧块大小的新块的内容未初始化；它们通常是垃圾。
+     * 当且仅当请求的大小为零时，结果本机指针才为零。 结果本机指针将针对所有值类型对齐。
+     * 通过调用freeMemory处理此内存，或使用reallocateMemory调整其大小。
+     * 传递给此方法的地址可以为null，在这种情况下将执行第一次分配
      * <em>Note:</em> It is the resposibility of the caller to make
      * sure arguments are checked before the methods are called. While
      * some rudimentary checks are performed on the input, the checks
@@ -689,17 +708,20 @@ public final class Unsafe {
     /**
      * Sets all bytes in a given block of memory to a fixed value
      * (usually zero).
-     *
+     * 将给定内存块中指定数量的字节设置为固定值（通常为零）。
      * <p>This method determines a block's base address by means of two parameters,
      * and so it provides (in effect) a <em>double-register</em> addressing mode,
      * as discussed in {@link #getInt(Object,long)}.  When the object reference is null,
      * the offset supplies an absolute base address.
-     *
+     * 此方法通过两个参数确定块的基地址，因此它（实际上）提供了双寄存器寻址模式，如getInt(Object, long) 。
+     * 当对象引用为空时，偏移量将提供绝对基地址。
      * <p>The stores are in coherent (atomic) units of a size determined
      * by the address and length parameters.  If the effective address and
      * length are all even modulo 8, the stores take place in 'long' units.
      * If the effective address and length are (resp.) even modulo 4 or 2,
      * the stores take place in units of 'int' or 'short'.
+     * 存储以连贯的（原子的）单位表示，其大小由地址和长度参数确定。 如果有效地址和长度均为偶数模8，则存储以“long ”单位进行。
+     * 如果有效地址和长度（以模4或2为模数），则存储以“int”或“ short”为单位
      *
      * <em>Note:</em> It is the resposibility of the caller to make
      * sure arguments are checked before the methods are called. While
@@ -751,7 +773,7 @@ public final class Unsafe {
     /**
      * Sets all bytes in a given block of memory to a copy of another
      * block.
-     *
+     * 将给定内存块中指定数量的字节设置为另一个块的副本。
      * <p>This method determines each block's base address by means of two parameters,
      * and so it provides (in effect) a <em>double-register</em> addressing mode,
      * as discussed in {@link #getInt(Object,long)}.  When the object reference is null,
@@ -882,7 +904,7 @@ public final class Unsafe {
      * Disposes of a block of native memory, as obtained from {@link
      * #allocateMemory} or {@link #reallocateMemory}.  The address passed to
      * this method may be null, in which case no action is taken.
-     *
+     * 处置从allocateMemory或reallocateMemory获得的本机内存块。 传递给此方法的地址可以为null，在这种情况下，不采取任何措施
      * <em>Note:</em> It is the resposibility of the caller to make
      * sure arguments are checked before the methods are called. While
      * some rudimentary checks are performed on the input, the checks
@@ -944,6 +966,7 @@ public final class Unsafe {
      * Therefore, code which will be ported to such JVMs on 64-bit platforms
      * must preserve all bits of static field offsets.
      * @see #getInt(Object, long)
+     * 实例字段在对象中的偏移量
      */
     public long objectFieldOffset(Field f) {
         if (f == null) {
@@ -963,6 +986,7 @@ public final class Unsafe {
      *         would throw {@code java.lang.NoSuchFieldException}.
      *
      * @see #objectFieldOffset(Field)
+     * 根据 Class 和字段名, 获取实例字段在对象中的偏移量
      */
     public long objectFieldOffset(Class<?> c, String name) {
         if (c == null || name == null) {
@@ -3275,13 +3299,14 @@ public final class Unsafe {
     /**
      * Ensures that loads before the fence will not be reordered with loads and
      * stores after the fence; a "LoadLoad plus LoadStore barrier".
-     *
+     * 确保屏障前的读,不会和屏障后的读写重排序:相当于一个 "读读"屏障 + "读写"屏障
      * Corresponds to C11 atomic_thread_fence(memory_order_acquire)
      * (an "acquire fence").
      *
      * A pure LoadLoad fence is not provided, since the addition of LoadStore
      * is almost always desired, and most current hardware instructions that
      * provide a LoadLoad barrier also provide a LoadStore barrier for free.
+     * 因为大部分都会需要"读写"屏障,所以不提供一个单一的"读读"屏障.
      * @since 1.8
      */
     @HotSpotIntrinsicCandidate
@@ -3290,13 +3315,14 @@ public final class Unsafe {
     /**
      * Ensures that loads and stores before the fence will not be reordered with
      * stores after the fence; a "StoreStore plus LoadStore barrier".
-     *
+     * 屏障前的读写,不会和屏障后的写重排序,相当于一个 "写写"+"读写"
      * Corresponds to C11 atomic_thread_fence(memory_order_release)
      * (a "release fence").
      *
      * A pure StoreStore fence is not provided, since the addition of LoadStore
      * is almost always desired, and most current hardware instructions that
      * provide a StoreStore barrier also provide a LoadStore barrier for free.
+     * 因为大部分都会需要"读写"屏障,所以不提供一个单一的"写写"屏障.
      * @since 1.8
      */
     @HotSpotIntrinsicCandidate
@@ -3307,7 +3333,7 @@ public final class Unsafe {
      * with loads and stores after the fence.  Implies the effects of both
      * loadFence() and storeFence(), and in addition, the effect of a StoreLoad
      * barrier.
-     *
+     * 屏障前的读写,不会和屏障后的的读写重排序: loadFence + storeFence + 写读
      * Corresponds to C11 atomic_thread_fence(memory_order_seq_cst).
      * @since 1.8
      */
@@ -3319,14 +3345,17 @@ public final class Unsafe {
      * loads after the fence.
      */
     public final void loadLoadFence() {
+        // loadFence 额外带有 读读, 直接用
         loadFence();
     }
 
     /**
      * Ensures that stores before the fence will not be reordered with
      * stores after the fence.
+     * 前写和后写不重排序
      */
     public final void storeStoreFence() {
+        // storeFence 额外带有 写写, 直接用
         storeFence();
     }
 
