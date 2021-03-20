@@ -253,13 +253,16 @@ public abstract class AbstractQueuedLongSynchronizer
                 if (ws == Node.SIGNAL) {
                     if (!h.compareAndSetWaitStatus(Node.SIGNAL, 0))
                         continue;            // loop to recheck cases
+                    // 如果是需要信号的结点, 则直接尝试唤醒
                     unparkSuccessor(h);
                 }
                 else if (ws == 0 &&
                          !h.compareAndSetWaitStatus(0, Node.PROPAGATE))
+                    // 否则设置为传播
                     continue;                // loop on failed CAS
             }
             if (h == head)                   // loop if head changed
+                // 可能其他线程拿到资源出队了, 所以继续循环
                 break;
         }
     }
@@ -291,7 +294,15 @@ public abstract class AbstractQueuedLongSynchronizer
          * racing acquires/releases, so most need signals now or soon
          * anyway.
          */
-        if (propagate > 0 || h == null || h.waitStatus < 0 ||
+        // h.waitStatus 是同时处理 SIGNAL 和  PROPAGATE, 结合 doReleaseShared 设置 PROPAGATE.
+        if (propagate > 0
+                // 应该是 0 的(当前被唤醒, 或直接拿到)
+                // 如果不是 0, 则应该是 PROPAGATE. 说明 setHead 完成之前, 其他线程释放资源,然后将老的 head 改为 PROPAGATE.见 doReleaseShared
+                || h == null || h.waitStatus < 0 ||
+                // 新的 head 可能有三种情况
+                // 1. 0 :没有后继结点或刚入队,没来得及改头, 见 shouldParkAfterFailedAcquire
+                // 2. -1 : 已入队, 并将 head 改为 SIGNAL , 见 shouldParkAfterFailedAcquire
+                // 2. -3 : 其他线程释放资源, 将 head 还为 0 时, 改为 PROPAGATE. 见 doReleaseShared
             (h = head) == null || h.waitStatus < 0) {
             Node s = node.next;
             if (s == null || s.isShared())
