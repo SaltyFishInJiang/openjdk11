@@ -1778,6 +1778,9 @@ public abstract class AbstractQueuedSynchronizer
          * unless the CAS failed (which is unlikely), it will be
          * there, so we hardly ever traverse much.
          */
+        // 因为设置 prev 和入队(设置 tail) 不是原子性的
+        // 存在 prev 不为空,但是由于 CAS 失败还未真正入队的情况。见 enq()
+        // 所以从后往前再次确认入队(因为会重试的)
         return findNodeFromTail(node);
     }
 
@@ -1810,6 +1813,7 @@ public abstract class AbstractQueuedSynchronizer
         /*
          * If cannot change waitStatus, the node has been cancelled.
          */
+        // 已经被中断处理了
         if (!node.compareAndSetWaitStatus(Node.CONDITION, 0))
             return false;
 
@@ -1821,6 +1825,8 @@ public abstract class AbstractQueuedSynchronizer
          */
         Node p = enq(node);
         int ws = p.waitStatus;
+        // ws > 0 说明已经取消了, 直接唤醒
+        // 要么前面结点的状态刚好在变化, 先直接唤醒. 反正如果失败了, 也会重新阻塞的
         if (ws > 0 || !p.compareAndSetWaitStatus(ws, Node.SIGNAL))
             LockSupport.unpark(node.thread);
         return true;
@@ -1834,8 +1840,10 @@ public abstract class AbstractQueuedSynchronizer
      * @return true if cancelled before the node was signalled
      */
     final boolean transferAfterCancelledWait(Node node) {
+        // 如果在检查中断之前, 已经被唤醒了, 那状态就是 0了, 这里 CAS 会失败
         if (node.compareAndSetWaitStatus(Node.CONDITION, 0)) {
             enq(node);
+            // 要求抛出异常
             return true;
         }
         /*
@@ -1844,8 +1852,10 @@ public abstract class AbstractQueuedSynchronizer
          * incomplete transfer is both rare and transient, so just
          * spin.
          */
+        // 那就等待唤醒流程执行完(也会把下一个等待的结点,放到 SyncQueue 上).
         while (!isOnSyncQueue(node))
             Thread.yield();
+        // 重新中断
         return false;
     }
 
@@ -1857,7 +1867,10 @@ public abstract class AbstractQueuedSynchronizer
      */
     final int fullyRelease(Node node) {
         try {
+            // 为什么拿到原来的资源状态,并保存下来?
+            // 因为针对于可重入锁/或者读写锁来说, 被唤醒时继续执行, 必须拿到原来所有的锁(比如两次重入锁或一个读锁一个写锁), 而不是仅仅一个锁就够了.
             int savedState = getState();
+            // 释放所有的锁
             if (release(savedState))
                 return savedState;
             throw new IllegalMonitorStateException();
@@ -2175,21 +2188,31 @@ public abstract class AbstractQueuedSynchronizer
          * </ol>
          */
         public final void await() throws InterruptedException {
+            // 1.首先检查中断
             if (Thread.interrupted())
                 throw new InterruptedException();
+            // 2.添加到条件队列
             Node node = addConditionWaiter();
+            // 3.释放资源, 返回原有锁状态
             int savedState = fullyRelease(node);
             int interruptMode = 0;
             while (!isOnSyncQueue(node)) {
+                // 4.如果不在 等待队列 上, 就继续阻塞
+                // 因为被唤醒时, 结点会被转移到 等待队列 上
                 LockSupport.park(this);
+                // 4-1.校验中断:如果是中断了, 会被转到 等待队列 上
                 if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
                     break;
             }
+            // 5.退出阻塞(中断或者被唤醒), 说明已经在队列, 重新循环获取资源了
             if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
                 interruptMode = REINTERRUPT;
+            // (因为还在 Lock 代码中, 所以必须拿到锁才能往后执行)
+            // 6.临走前做一次清理(包括自己),  否则就是等着被人处理
             if (node.nextWaiter != null) // clean up if cancelled
                 unlinkCancelledWaiters();
             if (interruptMode != 0)
+                // 7.处理中断
                 reportInterruptAfterWait(interruptMode);
         }
 
