@@ -148,20 +148,32 @@ public class CyclicBarrier {
      * There need not be an active generation if there has been a break
      * but no subsequent reset.
      */
+    // 重用分代标识,每次重置就会创建赋值给 generation 变量
     private static class Generation {
         Generation() {}                 // prevent access constructor creation
+        // 标识栅栏破坏,线程不会再等待
+        // 一般几种情况:
+        // 1.等待超时
+        // 2.线程中断
+        // 3.手动重置
+        // 4.回调执行异常
         boolean broken;                 // initially false
     }
 
     /** The lock for guarding barrier entry */
+    // 用于控制对状态、数量操作的并发控制
     private final ReentrantLock lock = new ReentrantLock();
     /** Condition to wait on until tripped */
+    // 线程等待在栅栏处的条件变量
     private final Condition trip = lock.newCondition();
     /** The number of parties */
+    // 参与线程的数量
     private final int parties;
     /** The command to run when tripped */
+    // 完成时的回调动作,由最后一个到达栅栏的线程执行
     private final Runnable barrierCommand;
     /** The current generation */
+    // 允许重用下的分代
     private Generation generation = new Generation();
 
     /**
@@ -169,14 +181,20 @@ public class CyclicBarrier {
      * on each generation.  It is reset to parties on each new
      * generation or when broken.
      */
+    // 剩下还没达到等待栅栏的线程数量, 每次到达就 --
+    // 初始值为 parties;
+    // parties - count = 正在等待的线程数量
     private int count;
 
+    /************** 必须持有锁,避免并发  start **********/
     /**
      * Updates state on barrier trip and wakes up everyone.
      * Called only while holding lock.
      */
+    // 重置,进入下一个分代
     private void nextGeneration() {
         // signal completion of last generation
+        // 唤醒上一个分代中等待线程
         trip.signalAll();
         // set up next generation
         count = parties;
@@ -192,71 +210,95 @@ public class CyclicBarrier {
         count = parties;
         trip.signalAll();
     }
+    /************** 必须持有锁,避免并发 end **********/
 
     /**
      * Main barrier code, covering the various policies.
+     */
+    /**
+     *
+     * @param timed 是否允许超时
+     * @param nanos 超时时间, 只有 timed = true  才有意义
+     * @return 返回到达索引: 第一个:parties - 1; 最后一个:0
      */
     private int dowait(boolean timed, long nanos)
         throws InterruptedException, BrokenBarrierException,
                TimeoutException {
         final ReentrantLock lock = this.lock;
+        // 1.核心逻辑得加锁
         lock.lock();
         try {
             final Generation g = generation;
 
             if (g.broken)
+                // 2.如果已经破坏, 必须手动重置才能使用
                 throw new BrokenBarrierException();
 
             if (Thread.interrupted()) {
+                // 3.当前执行线程中断了, 那必须做收尾工作:破坏栅栏,顺便唤醒所有等待线程
                 breakBarrier();
                 throw new InterruptedException();
             }
 
             int index = --count;
-            if (index == 0) {  // tripped
+            if (index == 0) {  // 4.全部到达了，当前线程是最后一个
                 boolean ranAction = false;
-                try {
+                try {// 最后一个执行线程负责执行回调
                     final Runnable command = barrierCommand;
                     if (command != null)
                         command.run();
                     ranAction = true;
+                    // 全部到达，执行成功：进入下一代
                     nextGeneration();
                     return 0;
                 } finally {
                     if (!ranAction)
+                        // 执行失败也是做收尾
                         breakBarrier();
                 }
             }
 
             // loop until tripped, broken, interrupted, or timed out
+            // 5.如果还没全部执行完成就等着吧
             for (;;) {
                 try {
+                    // 超时或不超时等待
                     if (!timed)
                         trip.await();
                     else if (nanos > 0L)
                         nanos = trip.awaitNanos(nanos);
                 } catch (InterruptedException ie) {
+                    // 6.判断是外部还是内部中断
                     if (g == generation && ! g.broken) {
+                        // 6.1说明是外部其他线程中断的
+                        // 进行收尾的同时, 得抛出异常
                         breakBarrier();
                         throw ie;
                     } else {
                         // We're about to finish waiting even if we had not
                         // been interrupted, so this interrupt is deemed to
                         // "belong" to subsequent execution.
+                        // 6.2如果进行到这里,那肯定是属于栅栏被破坏,或者全部到达栅栏
+                        // 直接恢复中断状态,不需要处理异常
                         Thread.currentThread().interrupt();
                     }
                 }
 
                 if (g.broken)
+                    // 7.检查是不是属于被破坏唤醒
                     throw new BrokenBarrierException();
 
                 if (g != generation)
+                    // 8.结束了, 返回序号
                     return index;
 
+                // 9.没结束,判断是否超时:超时破坏
                 if (timed && nanos <= 0L) {
                     breakBarrier();
                     throw new TimeoutException();
                 }
+                // 我也不清除啥情况会继续循环.
+                // 如果会循环, 那中断状态会被延续到下一轮的第3步检查中断,从而抛出中断异常
             }
         } finally {
             lock.unlock();
@@ -279,6 +321,7 @@ public class CyclicBarrier {
         if (parties <= 0) throw new IllegalArgumentException();
         this.parties = parties;
         this.count = parties;
+        // 指定回调动作
         this.barrierCommand = barrierAction;
     }
 
@@ -362,6 +405,7 @@ public class CyclicBarrier {
         try {
             return dowait(false, 0L);
         } catch (TimeoutException toe) {
+            // 不响应超时,所以需要处理一下超时情况
             throw new Error(toe); // cannot happen
         }
     }
@@ -467,7 +511,9 @@ public class CyclicBarrier {
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 唤醒等待线程, 标记已破坏
             breakBarrier();   // break the current generation
+            // 进入下次分代
             nextGeneration(); // start a new generation
         } finally {
             lock.unlock();
