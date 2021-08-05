@@ -260,15 +260,15 @@ public class ReentrantReadWriteLock
          * and the upper the shared (reader) hold count.
          */
 
-        static final int SHARED_SHIFT   = 16;
-        static final int SHARED_UNIT    = (1 << SHARED_SHIFT);
-        static final int MAX_COUNT      = (1 << SHARED_SHIFT) - 1;
-        static final int EXCLUSIVE_MASK = (1 << SHARED_SHIFT) - 1;
+        static final int SHARED_SHIFT   = 16;// 读锁（共享）的移位
+        static final int SHARED_UNIT    = (1 << SHARED_SHIFT);// 读锁（共享）的增量单位：00000000 00000001 00000000 00000000
+        static final int MAX_COUNT      = (1 << SHARED_SHIFT) - 1;// 读锁（共享）的最大获取数量 或 写锁（独占）的最大可重入次数
+        static final int EXCLUSIVE_MASK = (1 << SHARED_SHIFT) - 1;// 写锁（独占）的掩码：00000000 00000000 11111111 111111111
 
         /** Returns the number of shared holds represented in count. */
-        static int sharedCount(int c)    { return c >>> SHARED_SHIFT; }
+        static int sharedCount(int c)    { return c >>> SHARED_SHIFT; }// 丢弃低 16 位的写锁信息
         /** Returns the number of exclusive holds represented in count. */
-        static int exclusiveCount(int c) { return c & EXCLUSIVE_MASK; }
+        static int exclusiveCount(int c) { return c & EXCLUSIVE_MASK; }// 丢弃高 16 位的读锁信息，因为写锁掩码高 16 都是 0
 
         /**
          * A counter for per-thread read hold counts.
@@ -396,14 +396,19 @@ public class ReentrantReadWriteLock
             int w = exclusiveCount(c);
             if (c != 0) {
                 // (Note: if c != 0 and w == 0 then shared count != 0)
+                // c != 0, w 代表的写锁 = 0, 那不就是读锁 != 0 嘛
                 if (w == 0 || current != getExclusiveOwnerThread())
+                    // 写锁唯一
                     return false;
                 if (w + exclusiveCount(acquires) > MAX_COUNT)
+                    // 写锁也不允许超标
                     throw new Error("Maximum lock count exceeded");
                 // Reentrant acquire
+                // 可重入能获取成功, 一定是无读锁(即高16 bit = 0), 所以 c 可以直接 + acquires, 不用拿 state
                 setState(c + acquires);
                 return true;
             }
+            // 会存在读锁的排队或竞争阻塞, 或写锁的竞争
             if (writerShouldBlock() ||
                 !compareAndSetState(c, c + acquires))
                 return false;
@@ -417,6 +422,7 @@ public class ReentrantReadWriteLock
             if (firstReader == current) {
                 // assert firstReaderHoldCount > 0;
                 if (firstReaderHoldCount == 1)
+                    // 第一个获取的线程释放锁, 就不再记录了
                     firstReader = null;
                 else
                     firstReaderHoldCount--;
@@ -440,6 +446,9 @@ public class ReentrantReadWriteLock
                     // Releasing the read lock has no effect on readers,
                     // but it may allow waiting writers to proceed if
                     // both read and write locks are now free.
+                    // 按照一般情况, 返回 true 代表有新的资源, 但是读写一体的情况下, 很难区分读锁资源和写锁资源
+                    // 所以在 tryAcquireShared 中, 不允许读锁资源不足时等待.
+                    // 那这里直接就代表写锁可用了
                     return nextc == 0;
             }
         }
@@ -470,11 +479,15 @@ public class ReentrantReadWriteLock
             int c = getState();
             if (exclusiveCount(c) != 0 &&
                 getExclusiveOwnerThread() != current)
+                // 只有持有写锁的线程，才能锁降级
                 return -1;
             int r = sharedCount(c);
+            // 这里先进行一个简单的尝试, 认为一般情况下都是无锁竞争（CAS 不失败、获取锁不排队）、非大并发（锁数量不超过最大值）、无重入的场景
+            // 不同阻塞条件, 取决于公平模式
             if (!readerShouldBlock() &&
                 r < MAX_COUNT &&
                 compareAndSetState(c, c + SHARED_UNIT)) {
+                // 缓存的典型例子, 无锁竞争下, 记录的些许信息就能满足使用,来避免不必要的损耗
                 if (r == 0) {
                     firstReader = current;
                     firstReaderHoldCount = 1;
@@ -491,6 +504,7 @@ public class ReentrantReadWriteLock
                 }
                 return 1;
             }
+            // 走到这里,认为是多线程竞争的情况, 走更加复杂的逻辑
             return fullTryAcquireShared(current);
         }
 
@@ -506,16 +520,20 @@ public class ReentrantReadWriteLock
              * retries and lazily reading hold counts.
              */
             HoldCounter rh = null;
-            for (;;) {
+            for (;;) {// 读锁共享, 又不允许超标, 肯定不会排队, 所以一直重试
                 int c = getState();
                 if (exclusiveCount(c) != 0) {
                     if (getExclusiveOwnerThread() != current)
+                        // 只有持有写锁的线程，才能锁降级
                         return -1;
                     // else we hold the exclusive lock; blocking here
                     // would cause deadlock.
+                    // 持有写锁, 就不管阻塞了, 否则就死锁了
+                    // A 持有写锁, B 获取读锁被 A 阻塞; A 获取写锁被 B 阻塞,  无法释放写锁,最终死锁
                 } else if (readerShouldBlock()) {
                     // Make sure we're not acquiring read lock reentrantly
                     if (firstReader == current) {
+                        // 说明当前线程是第一个获取读锁的线程且从未释放, 这次是重入, 不管阻塞可以继续
                         // assert firstReaderHoldCount > 0;
                     } else {
                         if (rh == null) {
@@ -528,10 +546,12 @@ public class ReentrantReadWriteLock
                             }
                         }
                         if (rh.count == 0)
+                            // 不是重入, 会被阻塞
                             return -1;
                     }
                 }
                 if (sharedCount(c) == MAX_COUNT)
+                    // 超标是不排队的, 直接报错
                     throw new Error("Maximum lock count exceeded");
                 if (compareAndSetState(c, c + SHARED_UNIT)) {
                     if (sharedCount(c) == 0) {
@@ -676,6 +696,7 @@ public class ReentrantReadWriteLock
 
     /**
      * Nonfair version of Sync
+     * 写锁之间你争我抢；读锁只要撞见写锁排队（排队队头刚好是写锁请求），就装孙子让路。
      */
     static final class NonfairSync extends Sync {
         private static final long serialVersionUID = -8159625535654395037L;
@@ -696,6 +717,7 @@ public class ReentrantReadWriteLock
 
     /**
      * Fair version of Sync
+     * 只要有锁请求排队，就让路
      */
     static final class FairSync extends Sync {
         private static final long serialVersionUID = -2274990926593161451L;
